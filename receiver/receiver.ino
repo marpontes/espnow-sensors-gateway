@@ -4,6 +4,7 @@
 
 #define CHANNEL 1
 #define GW_I2C_ADDR 9
+#define FWMSG_SIZE 150
 
 byte x = 0;
 
@@ -48,17 +49,18 @@ void OnDataRecv(const uint8_t *mac_addr, const uint8_t *data, int data_len) {
   char payload[data_len];
   memcpy(&payload, data, data_len);
 //  memcpy(payload.macStr, macStr, sizeof(macStr));
-  char ffw[150];
-  sprintf(ffw, "{\"mac\": \"%s\", \"msg\": {%s}}", macStr, payload);
+  
+  char ffw[FWMSG_SIZE];
+  int paysize = sprintf(ffw, "{\"mac\": \"%s\", \"msg\": {%s}}", macStr, payload)+1;
   Serial.print("msg: "); Serial.println(ffw);
   Serial.println();
 
   Serial.println("Sending data over wire");
-//  Wire.beginTransmission(GW_I2C_ADDR);
-//  uint8_t payloadBytes[data_len];
-//  memcpy(payloadBytes, &payload, data_len);
-//  Wire.write(payloadBytes, data_len);
-//  Wire.endTransmission();
+  Wire.beginTransmission(GW_I2C_ADDR);
+  uint8_t payloadBytes[paysize];
+  memcpy(payloadBytes, payload, paysize);
+  Wire.write((uint8_t*)ffw, paysize);
+  Wire.endTransmission();
 
 }
 
