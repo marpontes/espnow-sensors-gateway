@@ -2,8 +2,6 @@
 #include <WiFi.h>
 #include "sender.h"
 
-struct_message payload;
-
 void OnDataSent(const uint8_t *mac_addr, esp_now_send_status_t status) {
   Serial.print("\r\nLast Packet Send Status:\t");
   Serial.println(status == ESP_NOW_SEND_SUCCESS ? "Delivery Success" : "Delivery Fail");
@@ -38,16 +36,15 @@ float getRand() {
 }
 
 void loop() {
-  payload.h = getRand();
-  payload.t = getRand();
-  payload.hic = getRand();
-
-  esp_err_t result = esp_now_send(receiverAddr, (uint8_t *)&payload, sizeof(payload));
+  char pl[100];
+  int b = sprintf(pl, "\"t\":%.2f, \"h\":%.2f, \"hi\":%.2f", getRand(), getRand(), getRand());
+  pl[b] = '\0';
+  esp_err_t result = esp_now_send(receiverAddr, (uint8_t *)&pl, b+1);
 
   if (result == ESP_OK) {
-    Serial.println("Sent with success");
+    Serial.printf("Sent with succes: %s %d", pl, b+1);
   } else {
     Serial.println("Error sending the data");
   }
-  delay(2000);
+  delay(4000);
 }
