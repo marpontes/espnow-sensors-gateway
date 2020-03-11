@@ -1,24 +1,10 @@
 #include <esp_now.h>
 #include <WiFi.h>
-#include "sender.h"
 #include "DHT.h"
-#include <math.h>
-
-// Temperature sensor
-#define DHTPIN 27
-#define DHTTYPE DHT22
-
-//Deepsleep
-#define uS_TO_S_FACTOR 1000000ULL  /* Conversion factor for micro seconds to seconds */
-#define TIME_TO_SLEEP  4        /* Time ESP32 will go to sleep (in seconds) */
-
-RTC_DATA_ATTR bool debug = true;
-RTC_DATA_ATTR bool dhtinit = false;
-
-RTC_DATA_ATTR DHT dht(DHTPIN, DHTTYPE);
+#include "sender.h"
 
 void setup() {
-
+  
   if (debug) {
     Serial.begin(115200);
   }
@@ -37,21 +23,16 @@ void setup() {
   if (esp_now_add_peer(&peerInfo) != ESP_OK) {
     return;
   }
-  
 
   sendData();
   esp_sleep_enable_timer_wakeup(TIME_TO_SLEEP * uS_TO_S_FACTOR);
   esp_deep_sleep_start();
 }
 
-void loop() {}
-
 void sendData() {
   char payload[100];
-  if(!dhtinit){
-    dht.begin();
-    dhtinit = true;
-  }
+  DHT dht(DHTPIN, DHTTYPE);
+  dht.begin();
   float t = dht.readTemperature();
   float h = dht.readHumidity();
   float hi = dht.computeHeatIndex(t, h, false);
@@ -69,3 +50,6 @@ void sendData() {
     }
   }
 }
+
+
+void loop() {}
