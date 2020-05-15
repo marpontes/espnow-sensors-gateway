@@ -10,8 +10,11 @@
 
 #include "secrets.h"
 
+void(* resetFunc) (void) = 0;
+
 int status = WL_IDLE_STATUS;     // the Wifi radio's status
 
+unsigned long lastMillis = 0;
 unsigned long time1;
 unsigned long time2 = 0;
 long lastReconnectAttempt = 0;
@@ -36,6 +39,8 @@ void setup() {
   //I2c
   Wire.onReceive(receiveEvent);
   Serial.println("I2c callback registered");
+  
+  lastMillis = millis();
 }
 
 void loop() {
