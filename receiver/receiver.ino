@@ -1,13 +1,66 @@
 #include <esp_now.h>
 #include <WiFi.h>
-#include <Wire.h>
+#include <ArduinoJson.h>
 
 #define CHANNEL 1
 #define GW_I2C_ADDR 9
 #define FWMSG_SIZE 150
+#define OUTMSG_SIZE 120
+#define MACSIZE 6
+#define MACSTRSIZE 18
 
-byte x = 0;
+/* --------------------------------------------
+    Variable declarations
+   -------------------------------------------- 
+*/
 
+typedef struct msg_in {
+    char msg[OUTMSG_SIZE];
+} msg_in;
+
+
+esp_now_peer_info_t remoteModule;
+StaticJsonDocument<FWMSG_SIZE> doc;
+String success;
+String inputString = "";
+bool stringComplete = false;
+
+uint8_t registeredPeers[][MACSIZE] = {
+  {0x4C, 0x11, 0xAE, 0xEA, 0x6E, 0x48}
+};
+
+
+/* --------------------------------------------
+    SETUP HELPERS
+   -------------------------------------------- 
+*/
+
+/**
+ * MODULE: BOOT
+ * Will run through peer addresses and register them
+ * with espnow -- those peers we want to be able to send
+ * messages to
+*/
+void registerPeers(){
+  int macSize = sizeof(registeredPeers[0]);
+  int arrSize = sizeof(registeredPeers)/macSize;
+  for(int x = 0 ; x < arrSize; x++)  {
+    memcpy(remoteModule.peer_addr, registeredPeers[x], macSize);
+    remoteModule.channel = 0;  
+    remoteModule.encrypt = false;
+    Serial.print("Adding peer: ");
+    Serial.println(getPrettyMac(registeredPeers[x]));
+    if (esp_now_add_peer(&remoteModule) != ESP_OK){
+      Serial.println("Failed to add peer");
+      continue;
+    }
+  }
+}
+
+/**
+ * MODULE: BOOT
+ * Starts Esp Now
+*/
 void InitESPNow() {
   WiFi.disconnect();
   if (esp_now_init() == ESP_OK) {
@@ -19,6 +72,11 @@ void InitESPNow() {
   }
 }
 
+
+/**
+ * MODULE: BOOT
+ * Configs the access point
+*/
 void configDeviceAP() {
   const char *SSID = "Slave_1";
   bool result = WiFi.softAP(SSID, "Slave_1_Password", CHANNEL, 0);
@@ -29,40 +87,188 @@ void configDeviceAP() {
   }
 }
 
+/* --------------------------------------------
+    LOOP HELPERS
+   -------------------------------------------- 
+*/
+
+/**
+ * MODULE: SERVER-TO-EDGE
+ * Resets the buffer string used to read from Serial
+*/
+void resetInput(){
+    inputString = "";
+    stringComplete = false;
+}
+
+/**
+ * MODULE: SERVER-TO-EDGE
+ * Reads from serial and flags when there's a complete read
+*/
+void serialEvent() { 
+  while (Serial.available()) { 
+    char inChar = (char)Serial.read(); 
+    inputString += inChar; 
+    if (inChar == '\n') { 
+      stringComplete = true; 
+    } 
+  }
+
+}
+
+/* --------------------------------------------
+    COMMON HELPERS
+   -------------------------------------------- 
+*/
+
+/**
+ * MODULE: COMMONS
+ * Transforms a Mac Address String format into its 
+ * uint8_t[] representation
+ */
+int str2mac(const char* mac, uint8_t* peerAddress){
+    if( 6 == sscanf( mac, "%hhx:%hhx:%hhx:%hhx:%hhx:%hhx",
+        &peerAddress[0], 
+        &peerAddress[1], 
+        &peerAddress[2],
+        &peerAddress[3], 
+        &peerAddress[4], 
+        &peerAddress[5] ) ){
+        return 1;
+    }else{
+        return 0;
+    }
+}
+
+/**
+ * MODULE: COMMONS
+ * Given a uint8_t[] array with mac information it Will
+ * tansform into a string format
+ */
+char* getPrettyMac(uint8_t peer[]){
+  char *macStr = (char*)malloc(MACSTRSIZE);
+  snprintf(macStr, MACSTRSIZE, "%02x:%02x:%02x:%02x:%02x:%02x",
+        peer[0], peer[1], peer[2], 
+        peer[3], peer[4], peer[5]
+  );
+  return macStr;
+}
+
+/* --------------------------------------------
+    Callbacks
+   -------------------------------------------- 
+*/
+
+/**
+ * MODULE: EDGE-TO-SERVER
+ * Callback that processes the incoming messages
+ * It prints to the serial so that NodeRed can handle
+ */
+void OnDataRecv(const uint8_t *mac_addr, const uint8_t *data, int data_len) {
+  
+  // parses the data back to char[]
+  char payload[data_len];
+  memcpy(&payload, data, data_len);
+  char * mac = getPrettyMac((uint8_t*)mac_addr) ;
+  
+  // Creates JSON dump attaching the mac address
+  char ffw[FWMSG_SIZE];
+  int paysize = sprintf(
+    ffw,  "{\"mac\": \"%s\", \"msg\": {%s}}",  mac, payload )+1;
+
+  // Sends to Serial
+  Serial.println(ffw);
+
+}
+
+/**
+ * MODULE: SERVER-TO-EDGE
+ * Callback that processes the result of outgoing messages
+ * Should be used for package delivery statistics or for debugging
+ */
+void OnDataSent(const uint8_t *mac_addr, esp_now_send_status_t status) {
+  Serial.print("\r\nLast Packet Send Status:\t");
+  Serial.println(status == ESP_NOW_SEND_SUCCESS ? "Delivery Success" : "Delivery Fail");
+  if (status ==0){
+    success = "Delivery Success :)";
+  }
+  else{
+    success = "Delivery Fail :(";
+  }
+}
+
+
+
+/* --------------------------------------------
+    SETUP
+   -------------------------------------------- 
+*/
+
 
 void setup() {
   Serial.begin(115200);
-  Wire.begin();
-  Serial.println("ESPNow/Basic/Slave Example");
-  WiFi.mode(WIFI_AP);
+  Serial.println("Initializing ESPNOW <-> Serial router");
+  WiFi.mode(WIFI_AP_STA);
   configDeviceAP();
   Serial.print("AP MAC: "); Serial.println(WiFi.softAPmacAddress());
   InitESPNow();
+  esp_now_register_send_cb(OnDataSent);
+  registerPeers();
   esp_now_register_recv_cb(OnDataRecv);
 }
 
-void OnDataRecv(const uint8_t *mac_addr, const uint8_t *data, int data_len) {
-  char macStr[18];
-  snprintf(macStr, sizeof(macStr), "%02x:%02x:%02x:%02x:%02x:%02x",
-           mac_addr[0], mac_addr[1], mac_addr[2], mac_addr[3], mac_addr[4], mac_addr[5]);
-  Serial.print("Last Packet Recv from: "); Serial.println(macStr);
-  char payload[data_len];
-  memcpy(&payload, data, data_len);
-//  memcpy(payload.macStr, macStr, sizeof(macStr));
-  
-  char ffw[FWMSG_SIZE];
-  int paysize = sprintf(ffw, "{\"mac\": \"%s\", \"msg\": {%s}}", macStr, payload)+1;
-  Serial.print("msg: "); Serial.println(ffw);
-  Serial.println();
 
-  Serial.println("Sending data over wire");
-  Wire.beginTransmission(GW_I2C_ADDR);
-  uint8_t payloadBytes[paysize];
-  memcpy(payloadBytes, payload, paysize);
-  Wire.write((uint8_t*)ffw, paysize);
-  Wire.endTransmission();
 
-}
+
+/* --------------------------------------------
+    LOOP
+   -------------------------------------------- 
+*/
 
 void loop() {
+  serialEvent();
+
+  if (stringComplete) {
+    Serial.println(inputString);
+
+    // Attemps to parse the incoming string into json
+    DeserializationError error = deserializeJson(doc, inputString);
+
+    if (error) {
+      Serial.print(F("deserializeJson() failed: "));
+      Serial.println(error.c_str());
+      resetInput();
+      return;
+    }
+  
+    // Reads the incoming raw MAC addr
+    const char* peerStr = doc["mac"];
+    Serial.print("Mac Destino:");Serial.println(peerStr);
+
+    // Attemps to parse the MAC addr str to uint8_t[]
+    uint8_t peerAddress[6] = { 0 };
+    char* _peerStr = (char*) peerStr;
+    int success = str2mac(peerStr, peerAddress);
+    if (!success) {
+      Serial.println("Error parsing mac");
+      return;
+    }
+
+    // Constructs the struct that will carry the message fields
+    msg_in incomingPayload;
+    String msg = doc["msg"];
+    msg.toCharArray(incomingPayload.msg, OUTMSG_SIZE);
+    Serial.print("Enviando msg: " );Serial.println(incomingPayload.msg);
+
+    // Attemps to send the messageregisteredPeers
+    esp_err_t result = esp_now_send(
+      peerAddress, (uint8_t *) &incomingPayload,  sizeof(incomingPayload) );
+
+    // Prints out the blind feedback
+    Serial.print("Send status: ");
+    Serial.println(result == ESP_OK ? "Success" : "Error sending" );
+    
+    // Resets the serial buffer
+    resetInput();
+  } 
 }
