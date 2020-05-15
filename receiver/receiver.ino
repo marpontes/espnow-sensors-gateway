@@ -8,6 +8,7 @@
 #define OUTMSG_SIZE 120
 #define MACSIZE 6
 #define MACSTRSIZE 18
+#define DEBUG false
 
 /* --------------------------------------------
     Variable declarations
@@ -64,10 +65,14 @@ void registerPeers(){
 void InitESPNow() {
   WiFi.disconnect();
   if (esp_now_init() == ESP_OK) {
-    Serial.println("ESPNow Init Success");
+    if(DEBUG){
+      Serial.println("ESPNow Init Success");
+    }
   }
   else {
-    Serial.println("ESPNow Init Failed");
+    if(DEBUG){
+      Serial.println("ESPNow Init Failed");
+    }
     ESP.restart();
   }
 }
@@ -80,10 +85,12 @@ void InitESPNow() {
 void configDeviceAP() {
   const char *SSID = "Slave_1";
   bool result = WiFi.softAP(SSID, "Slave_1_Password", CHANNEL, 0);
-  if (!result) {
-    Serial.println("AP Config failed.");
-  } else {
-    Serial.println("AP Config Success. Broadcasting with AP: " + String(SSID));
+  if(DEBUG){
+    if (!result) {
+      Serial.println("AP Config failed.");
+    } else {
+      Serial.println("AP Config Success. Broadcasting with AP: " + String(SSID));
+    }
   }
 }
 
@@ -187,13 +194,9 @@ void OnDataRecv(const uint8_t *mac_addr, const uint8_t *data, int data_len) {
  * Should be used for package delivery statistics or for debugging
  */
 void OnDataSent(const uint8_t *mac_addr, esp_now_send_status_t status) {
-  Serial.print("\r\nLast Packet Send Status:\t");
-  Serial.println(status == ESP_NOW_SEND_SUCCESS ? "Delivery Success" : "Delivery Fail");
-  if (status ==0){
-    success = "Delivery Success :)";
-  }
-  else{
-    success = "Delivery Fail :(";
+  if(DEBUG){
+    Serial.print("\r\nLast Packet Send Status:\t");
+    Serial.println(status == ESP_NOW_SEND_SUCCESS ? "Delivery Success" : "Delivery Fail");
   }
 }
 
@@ -207,10 +210,14 @@ void OnDataSent(const uint8_t *mac_addr, esp_now_send_status_t status) {
 
 void setup() {
   Serial.begin(115200);
-  Serial.println("Initializing ESPNOW <-> Serial router");
+  if(DEBUG){
+    Serial.println("Initializing ESPNOW <-> Serial router");
+  }
   WiFi.mode(WIFI_AP_STA);
   configDeviceAP();
-  Serial.print("AP MAC: "); Serial.println(WiFi.softAPmacAddress());
+  if(DEBUG){
+    Serial.print("AP MAC: "); Serial.println(WiFi.softAPmacAddress());
+  }
   InitESPNow();
   esp_now_register_send_cb(OnDataSent);
   registerPeers();
@@ -229,28 +236,37 @@ void loop() {
   serialEvent();
 
   if (stringComplete) {
-    Serial.println(inputString);
+    
+    if(DEBUG){
+      Serial.println(inputString);
+    }
 
     // Attemps to parse the incoming string into json
     DeserializationError error = deserializeJson(doc, inputString);
 
     if (error) {
-      Serial.print(F("deserializeJson() failed: "));
-      Serial.println(error.c_str());
+      if(DEBUG){
+        Serial.print(F("deserializeJson() failed: "));
+        Serial.println(error.c_str());
+      }
       resetInput();
       return;
     }
   
     // Reads the incoming raw MAC addr
     const char* peerStr = doc["mac"];
-    Serial.print("Mac Destino:");Serial.println(peerStr);
+    if(DEBUG){
+      Serial.print("Mac Dest:");Serial.println(peerStr);
+    }
 
     // Attemps to parse the MAC addr str to uint8_t[]
     uint8_t peerAddress[6] = { 0 };
     char* _peerStr = (char*) peerStr;
     int success = str2mac(peerStr, peerAddress);
     if (!success) {
-      Serial.println("Error parsing mac");
+      if(DEBUG){
+        Serial.println("Error parsing mac");
+      }
       return;
     }
 
@@ -258,15 +274,19 @@ void loop() {
     msg_in incomingPayload;
     String msg = doc["msg"];
     msg.toCharArray(incomingPayload.msg, OUTMSG_SIZE);
-    Serial.print("Enviando msg: " );Serial.println(incomingPayload.msg);
+    if(DEBUG){
+      Serial.print("Enviando msg: " );Serial.println(incomingPayload.msg);
+    }
 
     // Attemps to send the messageregisteredPeers
     esp_err_t result = esp_now_send(
       peerAddress, (uint8_t *) &incomingPayload,  sizeof(incomingPayload) );
 
     // Prints out the blind feedback
-    Serial.print("Send status: ");
-    Serial.println(result == ESP_OK ? "Success" : "Error sending" );
+    if(DEBUG){
+      Serial.print("Send status: ");
+      Serial.println(result == ESP_OK ? "Success" : "Error sending" );
+    }
     
     // Resets the serial buffer
     resetInput();
