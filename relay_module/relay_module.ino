@@ -2,6 +2,9 @@
 #include <WiFi.h>
 #include "secrets.h"
 
+#define UNSET 33
+#define SET 27
+
 String success;
 bool lampStatus;
 msg_in incomingPayload;
@@ -26,11 +29,29 @@ void OnDataRecv(const uint8_t * mac, const uint8_t *incomingData, int len) {
   
   Serial.print("Should turn: ");
   Serial.println(incomingPayload.msg);
+  
+  if(strcmp(incomingPayload.msg, "true") == 0){
+    Serial.println("Setting light TRUE");
+    setLight(true);
+  }else if(strcmp(incomingPayload.msg, "false") == 0){
+    Serial.println("Setting light FALSE");
+    setLight(false);
+  }else{
+    //Something's wrong
+  }
+  echo();
 }
  
 void setup() {
   Serial.begin(115200);
 
+  // 
+  pinMode (SET, OUTPUT);
+  pinMode (UNSET, OUTPUT);
+  digitalWrite(SET, LOW);
+  digitalWrite(UNSET, LOW);
+
+  
   WiFi.mode(WIFI_STA);
   if (esp_now_init() != ESP_OK) {
     Serial.println("Error initializing ESP-NOW");
@@ -50,9 +71,23 @@ void setup() {
   }
   esp_now_register_recv_cb(OnDataRecv);
 }
+
+void echo(){
+  char echo[90];
+  
+  snprintf(echo, sizeof echo, "%s%s%s", "\"on\":\"", incomingPayload.msg, "\"");
+  esp_now_send(broadcastAddress, (uint8_t *) &echo, sizeof(echo));
+
+}
  
 void loop() {
-  // outgointPayload.status = lampStatus;
-  // esp_err_t result = esp_now_send(broadcastAddress, (uint8_t *) &outgointPayload, sizeof(outgointPayload));
-  // delay(4000);
+
+}
+
+void setLight(bool mode){
+  int pin = mode == true ? SET : UNSET;
+  
+  digitalWrite(pin, HIGH);
+  delay(100);
+  digitalWrite(pin, LOW);
 }
