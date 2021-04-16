@@ -1,107 +1,106 @@
 // Load Wi-Fi library
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <stdbool.h>
+#include <esp_now.h>
 #include <Arduino.h>
-#include <PubSubClient.h>
 #include <WiFi.h>
 #include <analogWrite.h>
 
 #include "secrets.h"
+
+/* --------------------------------------------
+    PINouts
+   -------------------------------------------- 
+*/
 
 const int redPin = 33;
 const int greenPin = 25;
 const int bluePin = 26;
 const int whitePin = 27;
 
-int greenValue = 0;
-int redValue = 0;
-int blueValue = 0;
-int whiteValue = 0;
+/* --------------------------------------------
+    ESPNOW /state Specifics
+   -------------------------------------------- 
+*/
+String mode = "control"; // control, rainbow, stepper, random
+char rgbwPrefix[] = "rgbw_";
+bool on = true;
+int brightness = 255;
+int r;
+int g;
+int b;
+int w;
+msg_in incomingPayload;
+msg_out outgointPayload;
 
-WiFiClient wifiClient;
-PubSubClient client(wifiClient);
-long lastReconnectAttempt = 0;
 
-/** -------------------------
- * CONN HELPERS
- * -------------------------- */
 
-void wifiInit() {
-    Serial.print("Connecting to ");
-    Serial.println(ssid);
+/* --------------------------------------------
+    Messaging callbacks and helpers
+   -------------------------------------------- 
+*/
 
-    WiFi.begin(ssid, password);
-    delay(200);
-    WiFi.disconnect();
-    WiFi.begin(ssid, password);
-    int maxAttempts = 20;
-    int attempts = 0;
-    while (WiFi.status() != WL_CONNECTED) {
-        delay(500);
-        Serial.print(".");
-        attempts++;
-        if (attempts > maxAttempts) {
-          ESP.restart();
-        }
-    }
 
-    Serial.println("");
-    Serial.println("WiFi connected");
-    Serial.println("IP address: ");
-    Serial.println(WiFi.localIP());
-    lastReconnectAttempt = 0;
+bool startsWith(const char *pre, const char *str){
+    return strncmp(pre, str, strlen(pre)) == 0;
 }
 
-boolean reconnect() {
-    if (client.connect("printerledsClient")) {
-        Serial.println("PrinterLedsClient connected");
-        client.subscribe("bulb/printerleds/setrgbw");
-    }
-    Serial.print("Connected? ");
-    Serial.println(client.connected());
-
-    return client.connected();
+void OnDataSent(const uint8_t *mac_addr, esp_now_send_status_t status) {
+  Serial.print("\r\nLast Packet Send Status:\t");
+  Serial.println(status == ESP_NOW_SEND_SUCCESS ? "Delivery Success" : "Delivery Fail");
 }
 
-/** -------------------------
- * MQTT CALLBACK
- * -------------------------- */
-void callback(char* topic, byte* payload, unsigned int length) {
-    char arr[length+1];
-    String message = String((char*)payload);
-    message.substring(0, length+1).toCharArray(arr, length+1);
-    arr[length]='\0';
+void OnDataRecv(const uint8_t * mac, const uint8_t *incomingData, int len) {
+  memcpy(&incomingPayload, incomingData, sizeof(incomingPayload));
+  Serial.print("Bytes received: "); Serial.println(len);
+  Serial.print("msg received: "); Serial.println(incomingPayload.msg);
+  
+  //rgbw_r,g,b,w
+  if(startsWith(rgbwPrefix, incomingPayload.msg)){
+    
+    // "rgbw_123,131,31,1110"
+    char* ptr1 = strtok(incomingPayload.msg, "_");
+    char* prefix = ptr1;
+    ptr1 = strtok(NULL, "_");
+    char* values = ptr1;
+    Serial.print("Prefix: "); Serial.println(prefix);
+    Serial.print("Values: "); Serial.println(values);
+    char* ptr = strtok(values, ",");
 
-    Serial.print("Received: ");
-    Serial.println((char*)payload);
-    Serial.println(arr);
-    Serial.print("Length: ");
-    Serial.println(length);
-    char* ptr = strtok(arr, ",");
     int i = 0;
     int rgbw[4];
 
     while (ptr) {
-        rgbw[i] = atoi(ptr);
-        printf("'%d'\n", rgbw[i]);
-        Serial.println(rgbw[i]);
-        ptr = strtok(NULL, ",");
-        i++;
+      rgbw[i] = atoi(ptr);
+      printf("'%d' \n", rgbw[i]);
+      ptr = strtok(NULL, ",");
+      i++;
     }
-    redValue = rgbw[0];
-    greenValue = rgbw[1];
-    blueValue = rgbw[2];
-    whiteValue = rgbw[3];
-
-    analogWrite(redPin, redValue);
-    analogWrite(greenPin, greenValue);
-    analogWrite(bluePin, blueValue);
-    analogWrite(whitePin, whiteValue);
-
+    r = rgbw[0];
+    g = rgbw[1];
+    b = rgbw[2];
+    w = rgbw[3];
+    analogWrite(redPin, r);
+    analogWrite(greenPin, g);
+    analogWrite(bluePin, b);
+    analogWrite(whitePin, w);
+    
     Serial.print("Wrote values: ");
-    Serial.print("R( " + String(redValue) + " )");
-    Serial.print("G( " + String(greenValue) + " )");
-    Serial.print("B( " + String(blueValue) + " )");
-    Serial.println("W( " + String(whiteValue) + " )");
+    Serial.print("R( " + String(r) + " )");
+    Serial.print("G( " + String(g) + " )");
+    Serial.print("B( " + String(b) + " )");
+    Serial.println("W( " + String(w) + " )");
+  }
+ 
 }
+
+
+
+
+
+
 
 /** -------------------------
  * SETUP
@@ -109,25 +108,31 @@ void callback(char* topic, byte* payload, unsigned int length) {
 
 void setup() {
     Serial.begin(115200);
+  
+    /** 
+     *  ESPNOW CONFIG --------------------------- */
 
-    wifiInit();
-    client.setServer(server, 1883);
-    client.setCallback(callback);
-
-    analogWriteResolution(8);
-}
-
-void loop() {
-    if (!client.connected()) {
-        long now = millis();
-        if (now - lastReconnectAttempt > 5000) {
-            lastReconnectAttempt = now;
-            if (reconnect()) {
-                Serial.println("Reconnected!");
-                lastReconnectAttempt = 0;
-            }
-        }
-    } else {
-        client.loop();
+    WiFi.mode(WIFI_STA);
+    if (esp_now_init() != ESP_OK) {
+      Serial.println("Error initializing ESP-NOW");
+      return;
     }
+  
+    esp_now_register_send_cb(OnDataSent);
+    
+    esp_now_peer_info_t peerInfo;
+    memcpy(peerInfo.peer_addr, broadcastAddress, 6);
+    peerInfo.channel = 1;
+    peerInfo.encrypt = false;
+         
+    if (esp_now_add_peer(&peerInfo) != ESP_OK){
+      Serial.println("Failed to add peer");
+      return;
+    }
+    esp_now_register_recv_cb(OnDataRecv);
+         
+    Serial.print("ESP Board MAC Address:  ");
+    Serial.println(WiFi.macAddress());
 }
+
+void loop() {}
