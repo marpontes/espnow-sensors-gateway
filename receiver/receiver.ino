@@ -8,6 +8,7 @@
 #define OUTMSG_SIZE 120
 #define MACSIZE 6
 #define MACSTRSIZE 18
+#define NUMSLAVES 20
 #define DEBUG false
 
 /* --------------------------------------------
@@ -19,15 +20,18 @@ typedef struct msg_in {
     char msg[OUTMSG_SIZE];
 } msg_in;
 
-
+esp_now_peer_info_t slaves[NUMSLAVES] = {};
 esp_now_peer_info_t remoteModule;
+
 StaticJsonDocument<FWMSG_SIZE> doc;
 String success;
 String inputString = "";
 bool stringComplete = false;
 
 uint8_t registeredPeers[][MACSIZE] = {
-  {0x4C, 0x11, 0xAE, 0xEA, 0x6E, 0x48}
+  {0x4C, 0x11, 0xAE, 0xEA, 0x6E, 0x48},
+  {0x40, 0xf5, 0x20, 0x71, 0xc4, 0x30},
+  {0x24, 0x0a, 0xc4, 0xd6, 0xcc, 0xf0}
 };
 
 
@@ -46,12 +50,12 @@ void registerPeers(){
   int macSize = sizeof(registeredPeers[0]);
   int arrSize = sizeof(registeredPeers)/macSize;
   for(int x = 0 ; x < arrSize; x++)  {
-    memcpy(remoteModule.peer_addr, registeredPeers[x], macSize);
-    remoteModule.channel = 0;  
-    remoteModule.encrypt = false;
+    memcpy(slaves[x].peer_addr, registeredPeers[x], macSize);
+    slaves[x].channel = 0;  
+    slaves[x].encrypt = false;
     Serial.print("Adding peer: ");
     Serial.println(getPrettyMac(registeredPeers[x]));
-    if (esp_now_add_peer(&remoteModule) != ESP_OK){
+    if (esp_now_add_peer(&slaves[x]) != ESP_OK){
       Serial.println("Failed to add peer");
       continue;
     }
