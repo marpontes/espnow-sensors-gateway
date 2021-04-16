@@ -15,6 +15,8 @@ All communication happen using the ESPNow protocol.
 
 * Receiver - the ESPNow Access Point with which the edge devices will exchange messages;
 * edge/leds12v - Edge device that controlls a RGBW/RGBWW led strip;
+* edge/dht22 - Edge device that sends sensor information, in this case a DHT22 sensor;
 * edge/relay_module - Edge device that controlls latching a relay;
 * edge/office_led - Edge device that controlls an addressable led strip;
 * shutter_motor - Edge device that controlls stepper motor for operating window shutters;
+* 
